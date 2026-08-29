@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "diffusionblocks-independent"
+version = "0.3.0"
+description = "Approximate independently parallel DiffusionBlocks training"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["diffusionblocks-v5==0.17.0"]
+
+[project.scripts]
+diffusionblocks-independent = "diffusionblocks_independent.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
