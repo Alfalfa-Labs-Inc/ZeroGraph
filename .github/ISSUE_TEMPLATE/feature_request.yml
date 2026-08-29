@@ -1,0 +1,24 @@
+name: Feature request
+description: Propose a new model adapter, scheduler, or blockwise objective.
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What concrete workflow is blocked?
+    validations:
+      required: true
+  - type: textarea
+    id: contract
+    attributes:
+      label: Proposed independent-training contract
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Quality and systems validation plan
+    validations:
+      required: true

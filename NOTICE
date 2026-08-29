@@ -1,0 +1,10 @@
+ZeroGraph
+Copyright 2026 Alfalfa Labs, Inc.
+
+This product implements and extends concepts described in DiffusionBlocks:
+Block-wise Neural Network Training via Diffusion Interpretation, by Makoto
+Shing, Masanori Koyama, and Takuya Akiba, and acknowledges the Apache-2.0
+licensed reference implementation published by Sakana AI.
+
+The names Sakana AI and DiffusionBlocks are used for attribution and do not
+imply endorsement of ZeroGraph or Alfalfa Labs, Inc.
