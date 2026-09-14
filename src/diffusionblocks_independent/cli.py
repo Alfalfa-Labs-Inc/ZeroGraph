@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import os
 import subprocess
@@ -19,6 +20,21 @@ from .api import (
 )
 from .benchmark import benchmark_modes
 from .diagnostics import diagnose_program
+from .materialized import (
+    MaterializedBoundaryCache,
+    materialize_boundaries,
+    train_materialized_block,
+)
+
+
+def _load_callable(descriptor: str):
+    module_name, separator, name = descriptor.partition(":")
+    if not separator or not module_name or not name:
+        raise ValueError("callable must use module.path:name syntax")
+    value = getattr(importlib.import_module(module_name), name)
+    if not callable(value):
+        raise TypeError(f"{descriptor!r} does not resolve to a callable")
+    return value
 
 
 def _write_json(path: str | Path, payload) -> None:
@@ -148,6 +164,36 @@ def main(argv=None) -> None:
     benchmark.add_argument("--optimizer", default="adamw")
     benchmark.add_argument("--exact-warmup-steps", type=int, default=0)
 
+    materialize = subparsers.add_parser(
+        "materialize", help="cache clean teacher boundary trajectories"
+    )
+    materialize.add_argument("--teacher-factory", required=True)
+    materialize.add_argument("--batch-factory", required=True)
+    materialize.add_argument("--boundary-extractor", required=True)
+    materialize.add_argument("--output-dir", required=True)
+    materialize.add_argument("--teacher-id", required=True)
+    materialize.add_argument("--teacher-revision", required=True)
+    materialize.add_argument("--data-id", required=True)
+    materialize.add_argument("--overwrite", action="store_true")
+
+    materialized_train = subparsers.add_parser(
+        "train-materialized", help="train one block from a verified boundary cache"
+    )
+    materialized_train.add_argument("--block-factory", required=True)
+    materialized_train.add_argument("--cache", required=True)
+    materialized_train.add_argument("--block-id", required=True, type=int)
+    materialized_train.add_argument("--steps", required=True, type=int)
+    materialized_train.add_argument("--device", default="cpu")
+    materialized_train.add_argument("--learning-rate", default=1e-4, type=float)
+    materialized_train.add_argument(
+        "--optimizer", choices=("adamw", "sgd"), default="adamw"
+    )
+    materialized_train.add_argument("--forward")
+    materialized_train.add_argument("--loss")
+    materialized_train.add_argument("--max-grad-norm", type=float)
+    materialized_train.add_argument("--output", required=True)
+    materialized_train.add_argument("--checkpoint")
+
     launch = subparsers.add_parser("launch")
     launch.add_argument("--program", required=True)
     launch.add_argument("--batch-factory", required=True)
@@ -224,6 +270,52 @@ def main(argv=None) -> None:
             optimizer=args.optimizer,
             exact_warmup_steps=args.exact_warmup_steps,
         )
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return
+
+    if args.command == "materialize":
+        teacher = _load_callable(args.teacher_factory)()
+        batches = _load_callable(args.batch_factory)()
+        report = materialize_boundaries(
+            teacher,
+            batches,
+            _load_callable(args.boundary_extractor),
+            args.output_dir,
+            teacher_id=args.teacher_id,
+            teacher_revision=args.teacher_revision,
+            data_id=args.data_id,
+            overwrite=args.overwrite,
+        )
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return
+
+    if args.command == "train-materialized":
+        import torch
+
+        block = _load_callable(args.block_factory)(args.block_id).to(args.device)
+        optimizer_class = (
+            torch.optim.AdamW if args.optimizer == "adamw" else torch.optim.SGD
+        )
+        optimizer = optimizer_class(block.parameters(), lr=args.learning_rate)
+        report = train_materialized_block(
+            block,
+            MaterializedBoundaryCache(args.cache),
+            args.block_id,
+            optimizer,
+            steps=args.steps,
+            device=args.device,
+            forward=_load_callable(args.forward) if args.forward else None,
+            loss=_load_callable(args.loss) if args.loss else None,
+            max_grad_norm=args.max_grad_norm,
+        )
+        if args.checkpoint:
+            destination = Path(args.checkpoint).resolve()
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            temporary = destination.with_name(f".{destination.name}.tmp")
+            torch.save(block.state_dict(), temporary)
+            temporary.replace(destination)
+            report["checkpoint"] = str(destination)
+        _write_json(args.output, report)
         print(json.dumps(report, indent=2, sort_keys=True))
         return
 

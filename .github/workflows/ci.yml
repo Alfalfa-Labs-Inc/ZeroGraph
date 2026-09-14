@@ -27,8 +27,8 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install torch pytest build
           python -m pip install -e . --no-deps
-      - name: Independent scheduler unit tests
-        run: pytest -q tests/test_concurrency.py
+      - name: Source-only unit tests
+        run: pytest -q tests/test_concurrency.py tests/test_materialized.py
       - name: Build wheel and sdist
         run: python -m build
 

@@ -3,6 +3,22 @@
 All notable changes are documented here. This project follows semantic
 versioning once the public API is declared stable.
 
+## 0.4.0 - 2026-09-14
+
+- Promoted clean cached teacher-boundary regression (`sigma=0`) to the stable
+  ZeroGraph training contract.
+- Added `materialize_boundaries`, `MaterializedBoundaryCache`, and
+  `train_materialized_block` public APIs.
+- Added `zerograph materialize` and `zerograph train-materialized` commands.
+- Added SHA-256 cache-manifest and shard verification, safe path handling, and
+  explicit teacher/data provenance.
+- Added callback interfaces for architecture-specific attention inputs and
+  final task losses without loading a live teacher in a local worker.
+- Added the three-seed Qwen2.5-1.5B replication and the complete TinyLlama
+  positive/negative comparison to the documented evidence.
+- Reclassified full-noise local denoising as an experimental legacy path after
+  its language coherence gates failed.
+
 ## 0.3.0 - 2026-08-29
 
 - Added persistent CUDA-stream scheduling and exact interval telemetry.

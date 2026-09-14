@@ -51,6 +51,11 @@ class IndependentPackageTests(unittest.TestCase):
         self.assertFalse(contract.ordinary_gradient_parity)
         self.assertEqual(contract.inter_block_gradient_bytes, 0)
         self.assertEqual(contract.exact_release_preserved, "diffusionblocks-v5==0.17.0")
+        self.assertEqual(
+            contract.objective, "clean_teacher_boundary_regression_sigma_zero"
+        )
+        self.assertTrue(contract.teacher_trajectory_required)
+        self.assertFalse(contract.teacher_live_during_local_training)
 
     def test_inspection_streams_and_verifies_each_block(self):
         with tempfile.TemporaryDirectory() as temporary:

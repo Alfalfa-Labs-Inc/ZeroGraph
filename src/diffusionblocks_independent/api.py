@@ -16,7 +16,7 @@ INDEPENDENT_CLAIM_SCOPE = (
     "independent_tensor_regression_diffusion_mode_not_bitwise_training_parity"
 )
 _CORE_VERSION = "0.17.0"
-_PACKAGE_VERSION = "0.3.0"
+_PACKAGE_VERSION = "0.4.0"
 _HEX_64 = re.compile(r"^[0-9a-f]{64}$")
 _DISTRIBUTED_CHECKPOINT_MANIFEST = "independent-checkpoint-manifest.json"
 
@@ -25,13 +25,16 @@ _DISTRIBUTED_CHECKPOINT_MANIFEST = "independent-checkpoint-manifest.json"
 class IndependentContract:
     """Machine-readable separation from the exact-rematerialization product."""
 
-    package_mode: str = "approximate_independent_diffusion_training"
+    package_mode: str = "materialized_boundary_independent_training"
     exact_release_preserved: str = "diffusionblocks-v5==0.17.0"
     bitwise_ordinary_training_parity: bool = False
     ordinary_gradient_parity: bool = False
     corrector_training_required: bool = False
     inter_block_gradient_bytes: int = 0
-    objective: str = "block_local_noise_interval_denoising"
+    objective: str = "clean_teacher_boundary_regression_sigma_zero"
+    teacher_trajectory_required: bool = True
+    teacher_live_during_local_training: bool = False
+    experimental_noise_interval_mode_available: bool = True
     execution: str = "one_independent_job_per_block"
     speed_claim: str = "must_be_measured_on_disjoint_hardware"
     quality_claim: str = "must_be_measured_after_assembled_inference"

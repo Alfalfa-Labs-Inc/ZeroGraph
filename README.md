@@ -2,9 +2,9 @@
 
 # ZeroGraph
 
-### One model. Independent jobs. Zero inter-block gradients.
+### Materialize the trajectory. Train the blocks independently.
 
-An equipable blockwise training runtime for PyTorch and Hugging Face models.
+Clean teacher-boundary supervision for independently schedulable PyTorch jobs.
 
 [![CI](https://github.com/Alfalfa-Labs-Inc/ZeroGraph/actions/workflows/ci.yml/badge.svg)](https://github.com/Alfalfa-Labs-Inc/ZeroGraph/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.10%2B-3776AB.svg)](https://www.python.org/)
@@ -13,179 +13,205 @@ An equipable blockwise training runtime for PyTorch and Hugging Face models.
 
 </div>
 
-ZeroGraph converts a compiler-accepted residual model into independently
-loadable and trainable denoising blocks. Every block owns its optimizer and
-noise interval. No activation graph or gradient crosses a block boundary.
+ZeroGraph moves cross-depth information out of the synchronous backward path.
+A frozen teacher is run ahead of optimization, its clean partition-boundary
+states are stored in an integrity-checked cache, and each student block then
+trains as an independent job. The teacher body and neighboring trainable blocks
+are absent from the local training loop.
 
-That independence is real—and so is the trade-off: ZeroGraph changes the
-training objective. It does **not** claim bitwise or gradient parity with
-ordinary end-to-end training. Assembled quality must be measured.
+This is the configuration that passed the language-quality gates. The older
+full-noise local objective remains experimental because its TinyLlama arms did
+not preserve coherent generation.
 
-## Measured headline
+## Measured results
 
-Teacher-anchored TinyLlama conversion, 1.100B parameters, UltraChat, four
-disjoint NVIDIA L4 GPUs:
+Three-seed Qwen2.5-1.5B/UltraChat comparison on four NVIDIA L4 GPUs:
 
-| Primary run | Ordinary DDP SFT | ZeroGraph B=4 | Result |
+| Metric | FSDP2 ordinary SFT | Cached ZeroGraph | Result |
 |---|---:|---:|---:|
-| Peak allocated HBM / GPU | 12.32 GiB | 2.67 GiB | **4.62× lower** |
-| Critical compute path | 1,936.41 s | 395.20 s | **4.90× shorter** |
-| Held-out response CE | 1.2791 | 1.3096 | +0.0305 nat |
-| Inter-block gradient bytes | global DDP | 0 | strict independence |
+| Mean held-out CE | 1.4362 +/- 0.0031 | **1.2766 +/- 0.0011** | -0.1596 nat |
+| Local critical path | 4,933 s mean | 510 s mean | **9.68x shorter** |
+| Peak allocated HBM | 8.024 GB | 7.997 GB | effectively equal |
+| Peak reserved HBM | 12.012 GB | 8.997 GB | **1.335x lower** |
+| Inter-block gradient bytes | global backward | **0** | strict independence |
+| Seeds passing all gates | 3/3 | **3/3** | replicated |
 
-The cached replay matched all four online-reference checkpoint hashes and all
-held-out metrics. This is evidence for one teacher-anchored Llama-family
-conversion—not a universal speed law, from-scratch language result, or proof
-that arbitrary PyTorch models will compile. See [BENCHMARKS.md](BENCHMARKS.md).
+The 9.68x number is the measured **local optimization critical path**. It
+excludes one-time teacher materialization, persistent cache storage, checkpoint
+I/O, assembly, and evaluation. It is not a universal end-to-end speed claim.
+
+TinyLlama 1.1B independently confirmed the method: cached conversion reached CE
+1.3096 versus 1.2791 for ordinary SFT and 1.3256 for the teacher, with zero
+inter-block gradient bytes. See [BENCHMARKS.md](BENCHMARKS.md) for the complete
+positive and negative record.
 
 ## Why ZeroGraph
 
-Traditional parallelism distributes one global backward graph. ZeroGraph
-changes the topology entirely:
-
-- one independent process or distributed group per block;
-- only the active block's trainable state and backward graph need to be live;
-- zero inter-block gradient traffic with frozen or private interfaces;
-- FSDP, tensor parallelism, and context parallelism remain available *inside*
-  a block that is still too large for one device;
-- blocks can train concurrently on disjoint accelerators;
-- checkpoint, resume, diagnostics, assembly, and signed-artifact workflows are
-  explicit package APIs.
+- One optimizer and one backward graph per depth partition.
+- Zero strict-mode inter-block gradient communication.
+- A frozen, reusable cache replaces a live teacher during local optimization.
+- Cache shards and manifests are SHA-256 verified before use.
+- Attention masks, positional inputs, and final task losses are supported through
+  explicit callbacks instead of architecture guesses.
+- FSDP, tensor parallelism, context parallelism, and checkpointing remain usable
+  inside an oversized block.
 
 ## Install
-
-ZeroGraph 0.3.0 uses the ExactGraph 0.17.0 compiler/runtime without enabling
-exact-rematerialization semantics for its local objective.
 
 ```bash
 git clone https://github.com/Alfalfa-Labs-Inc/ExactGraph.git
 python -m pip install ./ExactGraph
 
 git clone https://github.com/Alfalfa-Labs-Inc/ZeroGraph.git
-python -m pip install -e ./ZeroGraph
+python -m pip install -e './ZeroGraph[dev]'
 ```
 
-The tested distribution name remains `diffusionblocks-independent`, and the
-Python import remains `diffusionblocks_independent`.
+The distribution name remains `diffusionblocks-independent`. Version 0.4.0
+depends on `diffusionblocks-v5==0.17.0` for the guarded partition/compiler
+runtime. Both `zerograph` and `diffusionblocks-independent` invoke the CLI.
 
-## Five-minute conversion
+## Python quick start
+
+The extractor defines the teacher trajectory. It may return a sequence of clean
+boundaries or `MaterializedBatch(boundaries, context)` when the student needs
+tensor metadata such as an attention mask.
 
 ```python
-from diffusionblocks.parity_examples import residual_factory
-from diffusionblocks_independent import compile_checkpoint, inspect_program
-
-payload = residual_factory()
-program = compile_checkpoint(
-    **payload,
-    checkpoint=None,
-    blocks=4,
+import torch
+from diffusionblocks_independent import (
+    MaterializedBatch,
+    MaterializedBoundaryCache,
+    materialize_boundaries,
+    train_materialized_block,
 )
-program.save_pretrained("zerograph-program")
 
-report = inspect_program("zerograph-program")
-print(report["contract"])
+def extract_boundaries(teacher, batch):
+    hidden = batch["inputs"]
+    boundaries = [hidden]
+    for partition in teacher.partitions:
+        hidden = partition(hidden, attention_mask=batch["attention_mask"])
+        boundaries.append(hidden)
+    return MaterializedBatch(
+        boundaries,
+        context={"attention_mask": batch["attention_mask"]},
+    )
+
+materialize_boundaries(
+    teacher,
+    training_batches,
+    extract_boundaries,
+    "boundary-cache",
+    teacher_id="org/model",
+    teacher_revision="full-commit-sha",
+    data_id="sha256:tokenized-training-stream",
+)
+
+cache = MaterializedBoundaryCache("boundary-cache")
+block = build_student_block(block_id=0).cuda()
+optimizer = torch.optim.AdamW(block.parameters(), lr=2e-5)
+
+report = train_materialized_block(
+    block,
+    cache,
+    block_id=0,
+    optimizer=optimizer,
+    steps=2048,
+    device="cuda",
+    forward=lambda module, source, context: module(
+        source, attention_mask=context["attention_mask"]
+    ),
+)
+
+assert report["inter_block_gradient_bytes"] == 0
+assert report["live_teacher_parameters"] == 0
 ```
 
-Integer-token objectives require an explicit target codec. The compiler refuses
-to guess whether an integer represents a token, class, mask, or index.
+Run the same call for every block on a separate device or distributed group.
+The package never silently synchronizes parameters shared between blocks;
+freeze them, make them block-private, or account for synchronization explicitly.
 
-## Launch independent jobs
+## CLI workflow
+
+Factories and callbacks use `module.path:name` descriptors:
 
 ```bash
-diffusionblocks-independent inspect \
-  --program zerograph-program \
-  --output zerograph-plan.json
+zerograph materialize \
+  --teacher-factory my_project.zero:teacher \
+  --batch-factory my_project.zero:batches \
+  --boundary-extractor my_project.zero:extract \
+  --teacher-id org/model \
+  --teacher-revision FULL_COMMIT_SHA \
+  --data-id sha256:TOKEN_STREAM_DIGEST \
+  --output-dir boundary-cache
 
-diffusionblocks-independent launch \
-  --program zerograph-program \
-  --batch-factory my_project.data:make_batches \
-  --steps 1000 \
-  --devices 0,1,2,3 \
-  --output-dir runs/zerograph
+zerograph train-materialized \
+  --block-factory my_project.zero:block \
+  --cache boundary-cache \
+  --block-id 0 \
+  --steps 2048 \
+  --device cuda \
+  --learning-rate 2e-5 \
+  --forward my_project.zero:forward_block \
+  --loss my_project.zero:boundary_and_token_loss \
+  --checkpoint runs/block-00.pt \
+  --output runs/block-00.json
 ```
 
-The launch plan records device groups, wave scheduling, seeds, optimizer
-settings, timeouts, and the explicit zero-inter-block-gradient contract.
+Launch one `train-materialized` command per block. Each worker loads its block
+and cache records; it does not load the live teacher.
 
-## How it works
+## Legacy experimental diffusion mode
 
-```mermaid
-flowchart LR
-    C[Checkpoint + executable factory] --> P[Guarded compiler]
-    P --> B0[Block 0 + local loss]
-    P --> B1[Block 1 + local loss]
-    P --> B2[Block 2 + local loss]
-    P --> B3[Block 3 + local loss]
-    B0 --> A[Assembled evaluation]
-    B1 --> A
-    B2 --> A
-    B3 --> A
+The original compiler and noise-interval runner remain available for research:
+
+```python
+from diffusionblocks_independent import compile_checkpoint
+
+program = compile_checkpoint(**model_payload, checkpoint=None, blocks=4)
+program.save_pretrained("experimental-noise-program")
 ```
 
-For target representation `y`, context `x`, and block-specific noise interval
-`I_b`, block `b` minimizes a local denoising objective:
+This mode changes the learning objective and has not passed the same language
+generation gates as clean materialized supervision. Do not treat decreasing
+local denoising loss as proof of assembled-model quality.
 
-```text
-z_sigma = y + sigma * epsilon
-L_b = E[w(sigma) * loss(D_b(x, z_sigma, sigma), y)], sigma in I_b
-```
-
-The blocks can be optimized in parallel because `grad(theta_b, L_b)` does not
-require another block's activations or parameters.
-
-## Runtime contract
-
-`IndependentContract` is machine-readable and intentionally blunt:
+## Contract
 
 ```python
 from diffusionblocks_independent import IndependentContract
-
 print(IndependentContract())
 ```
 
-- `bitwise_ordinary_training_parity = False`
-- `ordinary_gradient_parity = False`
+The stable 0.4.0 contract declares:
+
+- `objective = clean_teacher_boundary_regression_sigma_zero`
+- `teacher_trajectory_required = True`
+- `teacher_live_during_local_training = False`
 - `inter_block_gradient_bytes = 0`
-- `objective = block_local_noise_interval_denoising`
-- `speed_claim = must_be_measured_on_disjoint_hardware`
-- `quality_claim = must_be_measured_after_assembled_inference`
+- `ordinary_gradient_parity = False`
+- `bitwise_ordinary_training_parity = False`
 
-## Persistent single-GPU concurrency
+ZeroGraph changes the learning signal. [ExactGraph](https://github.com/Alfalfa-Labs-Inc/ExactGraph)
+is the separate objective-preserving product that retains exact downstream
+adjoints and certifies ordinary-update parity or rejects execution.
 
-```python
-from diffusionblocks_independent import run_cuda_block_jobs
+## What is not claimed
 
-report = run_cuda_block_jobs(
-    programs=loaded_local_programs,
-    batches=per_block_batch_schedules,
-    optimizers=per_block_optimizers,
-    sigmas=per_block_sigma_schedules,
-    generators=per_block_cuda_generators,
-    concurrent=True,
-)
-```
-
-CUDA streams can validate schedule invariance and expose opportunistic kernel
-overlap, but streams on one GPU still contend for its tensor cores and memory
-bandwidth. The intended speed path is disjoint hardware.
-
-## ZeroGraph vs. ExactGraph
-
-| | ZeroGraph | [ExactGraph](https://github.com/Alfalfa-Labs-Inc/ExactGraph) |
-|---|---|---|
-| Objective | block-local denoising | ordinary global loss |
-| Inter-block gradients | zero | exact adjoint remains |
-| Ordinary-training parity | not claimed | bitwise or reject |
-| Primary value | independent jobs | lower retained activations |
+- From-scratch independent foundation-model pretraining.
+- Ordinary-gradient or bitwise-training parity.
+- Universal support for arbitrary PyTorch graphs.
+- Universal total-HBM reduction.
+- A 9.68x cache-inclusive, end-to-end speedup.
+- That full-noise DiffusionBlocks preserves language quality.
 
 ## Project
 
-- [Benchmarks and claim boundaries](BENCHMARKS.md)
+- [Complete benchmark record](BENCHMARKS.md)
+- [Changelog](CHANGELOG.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
 - [Code of conduct](CODE_OF_CONDUCT.md)
-- [Changelog](CHANGELOG.md)
 
-ZeroGraph is an Alfalfa Labs, Inc. project, licensed under
-[Apache-2.0](LICENSE). The DiffusionBlocks method originates with Shing,
-Koyama, and Akiba; see [NOTICE](NOTICE) for attribution.
+ZeroGraph is an Alfalfa Labs, Inc. project under the [Apache-2.0 license](LICENSE).
+The DiffusionBlocks method originates with Shing, Koyama, and Akiba; see
+[NOTICE](NOTICE) for attribution.
