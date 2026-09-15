@@ -40,6 +40,13 @@ The 9.68x number is the measured **local optimization critical path**. It
 excludes one-time teacher materialization, persistent cache storage, checkpoint
 I/O, assembly, and evaluation. It is not a universal end-to-end speed claim.
 
+The completed evidence-first campaign adds ZeRO-3, objective-matched
+online/cached pairs, cache-inclusive reuse through K=16, B=2/4/8, boundary
+robustness, independent restart, and Qwen2.5-3B. The 3.086B conversion passed
+all quality gates at CE 1.3002 with zero inter-block gradient bytes. Cached
+target acquisition was faster after materialization, but did **not** reach
+end-to-end break-even by K=16. See the [paper and evidence](paper/README.md).
+
 TinyLlama 1.1B independently confirmed the method: cached conversion reached CE
 1.3096 versus 1.2791 for ordinary SFT and 1.3256 for the teacher, with zero
 inter-block gradient bytes. See [BENCHMARKS.md](BENCHMARKS.md) for the complete
@@ -66,7 +73,7 @@ git clone https://github.com/Alfalfa-Labs-Inc/ZeroGraph.git
 python -m pip install -e './ZeroGraph[dev]'
 ```
 
-The distribution name remains `diffusionblocks-independent`. Version 0.4.0
+The distribution name remains `diffusionblocks-independent`. Version 0.5.0
 depends on `diffusionblocks-v5==0.17.0` for the guarded partition/compiler
 runtime. Both `zerograph` and `diffusionblocks-independent` invoke the CLI.
 

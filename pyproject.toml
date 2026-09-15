@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "diffusionblocks-independent"
-version = "0.4.0"
+version = "0.5.0"
 description = "ZeroGraph: independent block training with materialized supervision"
 readme = "README.md"
 requires-python = ">=3.10"

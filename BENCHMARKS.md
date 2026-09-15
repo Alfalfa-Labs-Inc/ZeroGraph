@@ -101,3 +101,17 @@ quality or foundation-model convergence result.
 Every new benchmark should report local loss windows, assembled quality,
 ordinary and method HBM, critical compute, total accelerator-hours, block
 topology, communication bytes, and failed preregistered gates.
+
+## Evidence-first 0.5.0 campaign
+
+The nine-phase Qwen2.5 campaign added ZeRO-3, objective-matched online/cached
+pairs, cache-inclusive K=1/2/4/8/16 accounting, B=2/4/8, boundary robustness,
+five downstream tasks, INT8 cache validation, and exact independent restart.
+The 72.0-GiB BF16 cache matched recomputed boundaries bitwise. Cached recurring
+jobs were faster, but no cache-inclusive break-even occurred by K=16.
+
+Qwen2.5-3B trained as four independent jobs and achieved assembled CE 1.3002,
+positive context use, coherent generations, a 13.59-GiB local peak, and zero
+inter-block gradient bytes. This validates real pretrained 3B
+conversion/distillation, not from-scratch pretraining. Total campaign spend was
+$33.01.

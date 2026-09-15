@@ -1,8 +1,8 @@
-# ZeroGraph 0.4.0 result card
+# ZeroGraph 0.5.0 result card
 
 ## Stable product
 
-ZeroGraph 0.4.0 trains residual depth partitions against clean cached teacher
+ZeroGraph 0.5.0 trains residual depth partitions against clean cached teacher
 boundary states (`sigma=0`). After the cache is materialized, each block owns
 its optimizer and backward graph; the live teacher and neighboring trainable
 blocks are absent. Strict mode records zero inter-block gradient bytes.
@@ -36,13 +36,22 @@ blocks are absent. Strict mode records zero inter-block gradient bytes.
 
 - Unanchored GPT-2 Large reduced local losses but failed context and generation retention.
 - TinyLlama cached full-noise, online full-noise, and hierarchical full-noise arms failed coherence.
-- Therefore full-noise denoising remains experimental and is not the 0.4.0 stable product.
+- Therefore full-noise denoising remains experimental and is not the stable product.
 
 ## Claim boundary
 
 The 9.68x result is the local optimization critical path on disjoint L4 GPUs.
 It excludes cache construction, storage, checkpoint I/O, assembly, and final
-evaluation. ZeroGraph 0.4.0 is a pretrained-model conversion/distillation
+evaluation. ZeroGraph 0.5.0 is a pretrained-model conversion/distillation
 system, not established from-scratch pretraining or ordinary-gradient parity.
 
 See [BENCHMARKS.md](BENCHMARKS.md) for protocols and the full comparison.
+
+## Qwen2.5-3B and objective-matched cache validation
+
+- 3,085,938,688 parameters; four independent 693.7M-parameter jobs.
+- Assembled CE **1.30018** (base 1.23085; teacher 1.36002).
+- Context delta **+0.50885 nat**; peak allocated HBM **13.59 GiB**.
+- Across 16 paired jobs, cached execution averaged 99.13 s after materialization
+  versus 116.39 s online, but the 618.31 s cache prevented break-even by K=16.
+- A SIGTERM-interrupted job resumed bitwise-identically without global rollback.

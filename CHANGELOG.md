@@ -3,6 +3,14 @@
 All notable changes are documented here. This project follows semantic
 versioning once the public API is declared stable.
 
+## 0.5.0 - 2026-09-15
+
+- Added the verified nine-phase Qwen2.5 campaign and IEEE paper.
+- Validated real 3.086B conversion with four independent block jobs.
+- Added objective-matched cache reuse through K=16; no break-even was observed.
+- Added ZeRO-3/FSDP2 references, block/boundary sweeps, downstream tasks, and
+  bitwise independent restart.
+
 ## 0.4.0 - 2026-09-14
 
 - Promoted clean cached teacher-boundary regression (`sigma=0`) to the stable
